@@ -44,13 +44,14 @@ Use two independent mode-`0700` directory boundaries:
    byte-for-byte snapshot of the selected original/proxy/segment attachment and clipboard recovery backup. Keep the
    disposable mode-`0600` request file outside the workspace as well. Never
    expose these paths in the model prompt.
-2. **Antigravity workspace:** use the dedicated stable cache path required for
-   workspace trust, but reset it to empty before every locked run. It contains no video, request file,
+2. **Antigravity workspace:** use one of five dedicated stable cache paths
+   required for workspace trust (`workspace`, then `workspace-2` through
+   `workspace-5`), but reset the selected lane to empty before every lane-locked run. It contains no video, request file,
    clipboard data, scripts, hooks, rules, manifests, prior results, or other
    executable/configuration content. The only permitted model-created entry is
    the regular file `result.json` at the workspace root.
 
-Launch `agy` with the empty workspace as `cwd`. Do not trust content inherited
+Launch `agy` with the selected empty lane workspace as `cwd`. Do not trust content inherited
 from an arbitrary project. Keep the video snapshot outside this workspace and
 attach its file URL through the clipboard.
 
@@ -72,6 +73,12 @@ Treat the global macOS pasteboard transactionally:
 4. Require an authoritative confirmation of exactly one clipboard-sourced
    `media attached` item with a `video/*` MIME type.
 5. Restore the clipboard immediately, before submitting the analysis request.
+
+Permit at most five concurrent controller runs. Hold a distinct workspace lock
+for each active lane for the complete run. Hold the one global clipboard lock
+only across steps 2 through 5 above; release it after verified restoration and
+before model generation. Never stage two attachments concurrently. A failure
+while the clipboard is staged must retain the global lock through recovery.
 
 Never read model output from the clipboard and never copy TUI output to it. If
 the clipboard changed externally, preserve the newer content and recovery
@@ -166,7 +173,9 @@ write, prohibited approvals/files, completion, missing/invalid/extra results,
 cleanup, and shutdown. Tests must prove the workspace is empty before launch,
 video/request/backup paths remain outside it, only `result.json` can appear,
 TUI and clipboard are never result channels, and published output is validated
-and atomic.
+and atomic. A five-lane integration fixture must prove that all model-generation
+phases can overlap while every clipboard stage/restore transaction remains
+strictly serialized.
 
 Any CLI version, model, mode, footer, tool trajectory, or attachment wording
 change requires new deterministic fixtures and an authenticated controlled-video

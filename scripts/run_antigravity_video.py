@@ -51,8 +51,8 @@ from attachment_adapter import (  # noqa: E402
 )
 
 
-RUNNER_VERSION = "2.2.1"
-SKILL_VERSION = "2.3.0"
+RUNNER_VERSION = "2.3.0"
+SKILL_VERSION = "2.5.0"
 SUPPORTED_AGY_VERSION = "1.1.1"
 FIXED_MODEL = "Gemini 3.5 Flash (High)"
 SUPPORTED_EXTENSIONS = {".mp4", ".mov", ".webm", ".avi"}
@@ -62,7 +62,9 @@ STARTUP_TIMEOUT = 60
 READY_TIMEOUT = 30
 ATTACHMENT_TIMEOUT = 30
 SHUTDOWN_TIMEOUT = 10
-LOCK_WAIT_SECONDS = 2
+MAX_CONCURRENT_ANALYSES = 5
+WORKSPACE_LOCK_WAIT_SECONDS = 2
+CLIPBOARD_LOCK_WAIT_SECONDS = 60
 MAX_SANITIZED_LOG_BYTES = 256 * 1024
 MAX_REQUEST_BYTES = 8 * 1024
 MAX_RESULT_BYTES = 2 * 1024 * 1024
@@ -791,8 +793,18 @@ Write exactly one JSON object with the same six model-derived keys and nested ti
 
 
 class Lock:
-    def __init__(self, path: Path) -> None:
+    def __init__(
+        self,
+        path: Path,
+        *,
+        wait_seconds: float = WORKSPACE_LOCK_WAIT_SECONDS,
+        busy_message: str = "Another video-understanding run currently owns this lock.",
+        next_step: str = "Wait for that run to finish, then retry explicitly.",
+    ) -> None:
         self.path, self.handle, self.acquired = path, None, False
+        self.wait_seconds = wait_seconds
+        self.busy_message = busy_message
+        self.next_step = next_step
 
     def acquire(self) -> None:
         if fcntl is None:
@@ -804,7 +816,7 @@ class Lock:
             )
         self.path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
         self.handle = self.path.open("a+b")
-        deadline = time.monotonic() + LOCK_WAIT_SECONDS
+        deadline = time.monotonic() + self.wait_seconds
         while True:
             try:
                 fcntl.flock(self.handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
@@ -812,8 +824,7 @@ class Lock:
                 return
             except BlockingIOError:
                 if time.monotonic() >= deadline:
-                    fail("BUSY", "Another video-understanding run currently owns the global clipboard lock.", TUIState.PRECHECK,
-                         next_step="Wait for that run to finish, then retry explicitly.")
+                    fail("BUSY", self.busy_message, TUIState.PRECHECK, next_step=self.next_step)
                 time.sleep(0.1)
 
     def release(self) -> None:
@@ -866,8 +877,20 @@ class VideoRunner:
         self.state = TUIState.PRECHECK
         self.platform_name = sys.platform
         self.cache_root = _default_cache_root(self.platform_name)
-        self.workspace = self.cache_root / "workspace"
-        self.lock = Lock(self.cache_root / "clipboard.lock")
+        self.lane = getattr(args, "lane", 1)
+        workspace_name = "workspace" if self.lane == 1 else f"workspace-{self.lane}"
+        self.workspace = self.cache_root / workspace_name
+        self.workspace_lock = Lock(
+            self.cache_root / "locks" / f"{workspace_name}.lock",
+            busy_message=f"Another analysis currently owns Antigravity workspace lane {self.lane}.",
+            next_step="Use a different free lane or wait for the current lane to finish.",
+        )
+        self.clipboard_lock = Lock(
+            self.cache_root / "clipboard.lock",
+            wait_seconds=CLIPBOARD_LOCK_WAIT_SECONDS,
+            busy_message="Another analysis did not finish its clipboard attachment transaction in time.",
+            next_step="Wait for the active attachment transaction to restore the clipboard, then retry explicitly.",
+        )
         self.attachment_adapter: AttachmentAdapter = create_attachment_adapter(
             platform_name=sys.platform,
             bridge_override=args.clipboard_bridge,
@@ -1113,30 +1136,30 @@ class VideoRunner:
         self.analysis_request = load_analysis_request(self.args.request_file)
         request_path = Path(self.args.request_file).expanduser().resolve(strict=False)
         try:
-            request_path.relative_to(self.workspace)
+            request_path.relative_to(self.cache_root)
         except ValueError:
             pass
         else:
-            fail("REQUEST_INVALID", "The analysis request cannot be stored inside the runner's isolated workspace.",
+            fail("REQUEST_INVALID", "The analysis request cannot be stored inside the runner's runtime cache.",
                  TUIState.PRECHECK, next_step="Place the private request file outside the Antigravity workspace.")
         source = validate_video_path(self.args.video)
         try:
-            source.relative_to(self.workspace)
+            source.relative_to(self.cache_root)
         except ValueError:
             pass
         else:
-            fail("VIDEO_NOT_REGULAR_FILE", "The source video cannot be stored inside the runner's isolated workspace.",
+            fail("VIDEO_NOT_REGULAR_FILE", "The source video cannot be stored inside the runner's runtime cache.",
                  TUIState.PRECHECK, next_step="Move the source video elsewhere and retry.")
         self.output_path = Path(self.args.output).expanduser().resolve(strict=False)
         if self.output_path in {source, request_path}:
             fail("OUTPUT_PATH_INVALID", "--output must not overwrite the source video or analysis request.",
                  TUIState.PRECHECK, next_step="Choose a separate private JSON output path.")
         try:
-            self.output_path.relative_to(self.workspace)
+            self.output_path.relative_to(self.cache_root)
         except ValueError:
             pass
         else:
-            fail("OUTPUT_PATH_INVALID", "--output cannot point inside the runner's isolated workspace.",
+            fail("OUTPUT_PATH_INVALID", "--output cannot point inside the runner's runtime cache.",
                  TUIState.PRECHECK, next_step="Choose an output path outside the Antigravity cache workspace.")
         agy = _resolve_agy(self.args.agy_executable)
         _preflight_agy(agy)
@@ -1144,7 +1167,7 @@ class VideoRunner:
         self.cache_root.mkdir(mode=0o700, parents=True, exist_ok=True)
         os.chmod(self.cache_root, 0o700)
         self._attachment_action(lambda: self.attachment_adapter.prepare(self.cache_root))
-        self.lock.acquire()
+        self.workspace_lock.acquire()
         self.check_interrupted()
 
         self._clear_workspace()
@@ -1181,6 +1204,8 @@ class VideoRunner:
         self._wait_screen(STARTUP_TIMEOUT + READY_TIMEOUT, lambda text: text if _ready(text) else None, "AGY_READY_TIMEOUT")
         self.check_interrupted()
 
+        self.clipboard_lock.acquire()
+        self.check_interrupted()
         self.transition(TUIState.STAGING_CLIPBOARD)
         self._attachment_action(self.attachment.stage)
         self.check_interrupted()
@@ -1195,6 +1220,7 @@ class VideoRunner:
 
         self.transition(TUIState.RESTORING_CLIPBOARD)
         self._restore_attachment()
+        self.clipboard_lock.release()
         self.check_interrupted()
         expected_backend = {
             "provider": "antigravity-cli", "cli_version": SUPPORTED_AGY_VERSION, "model": FIXED_MODEL,
@@ -1255,7 +1281,7 @@ class VideoRunner:
             cleanup_error = RunnerError("CLEANUP_FAILED", "The Antigravity child process group could not be verified as stopped.",
                                         TUIState.CLEANUP, video_uploaded=self.video_uploaded,
                                         clipboard_restored=self.clipboard_restored)
-        if self.lock.acquired and self.workspace.exists():
+        if self.workspace_lock.acquired and self.workspace.exists():
             try:
                 self._clear_workspace()
             except RunnerError as exc:
@@ -1277,7 +1303,8 @@ class VideoRunner:
                 if cleanup_error is None:
                     cleanup_error = RunnerError("CLEANUP_FAILED", f"Private runtime cleanup failed: {exc}.", TUIState.CLEANUP,
                                                 video_uploaded=self.video_uploaded, clipboard_restored=self.clipboard_restored)
-        self.lock.release()
+        self.clipboard_lock.release()
+        self.workspace_lock.release()
         return cleanup_error
 
     def write_sanitized_log(self, final_code: str) -> str | None:
@@ -1289,6 +1316,7 @@ class VideoRunner:
         prompt_was_sent = any(event["state"] == TUIState.SENDING_ANALYSIS_PROMPT.name for event in self.events)
         payload = {
             "runner_version": RUNNER_VERSION, "skill_version": SKILL_VERSION,
+            "concurrency_lane": self.lane,
             "agy_version": SUPPORTED_AGY_VERSION, "model": FIXED_MODEL,
             "source": self.source_meta,
             "states": self.events, "video_uploaded": self.video_uploaded,
@@ -1337,6 +1365,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--timeout-seconds", type=int, default=DEFAULT_GENERATION_TIMEOUT,
                         help=f"Model-generation deadline only (default: {DEFAULT_GENERATION_TIMEOUT})")
     parser.add_argument("--output", required=True, help="Atomically write validated JSON to this path")
+    parser.add_argument("--lane", type=int, default=1,
+                        help=f"Stable isolated workspace lane for concurrent analysis (1-{MAX_CONCURRENT_ANALYSES}; default: 1)")
     parser.add_argument("--keep-sanitized-log", action="store_true", help="Keep a bounded, redacted PTY diagnostic log")
     parser.add_argument("--agy-executable", help=argparse.SUPPRESS)
     parser.add_argument("--clipboard-bridge", help=argparse.SUPPRESS)
@@ -1347,6 +1377,9 @@ def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     if args.timeout_seconds <= 0:
         print(json.dumps(RunnerError("AGY_GENERATION_TIMEOUT", "--timeout-seconds must be positive.", TUIState.PRECHECK).as_dict()), file=sys.stderr)
+        return 2
+    if not 1 <= args.lane <= MAX_CONCURRENT_ANALYSES:
+        print(json.dumps(RunnerError("REQUEST_INVALID", f"--lane must be between 1 and {MAX_CONCURRENT_ANALYSES}.", TUIState.PRECHECK).as_dict()), file=sys.stderr)
         return 2
     runner = VideoRunner(args)
 

@@ -55,6 +55,7 @@ def fake_command(
     *,
     keep_sanitized_log: bool = False,
     runner_entry: Path = RUNNER_ENTRY,
+    lane: int = 1,
 ) -> list[str]:
     command = [
         sys.executable,
@@ -68,6 +69,8 @@ def fake_command(
         str(FAKE_CLIPBOARD),
         "--timeout-seconds",
         "3",
+        "--lane",
+        str(lane),
     ]
     if output is not None:
         command += ["--output", str(output)]
@@ -85,6 +88,7 @@ def run_fake(
     video_size_bytes: int | None = None,
     keep_sanitized_log: bool = False,
     runner_entry: Path = RUNNER_ENTRY,
+    lane: int = 1,
 ) -> FakeRun:
     home = tmp_path / "home"
     home.mkdir()
@@ -121,6 +125,7 @@ def run_fake(
             output,
             keep_sanitized_log=keep_sanitized_log,
             runner_entry=runner_entry,
+            lane=lane,
         ),
         capture_output=True,
         text=True,
@@ -165,6 +170,14 @@ def test_oversized_video_is_rejected_before_agy_or_clipboard(tmp_path: Path):
     assert run.event_lines() == []
 
 
+@pytest.mark.parametrize("lane", [0, 6])
+def test_lane_must_stay_within_fixed_concurrency_cap(tmp_path: Path, lane: int):
+    run = run_fake(tmp_path, lane=lane)
+    assert run.completed.returncode == 2
+    assert error_from(run)["code"] == "REQUEST_INVALID"
+    assert not run.output.exists()
+
+
 def test_fake_success_proves_v2_argv_tty_attachment_and_result_order(tmp_path: Path):
     run = run_fake(tmp_path)
     assert run.completed.returncode == 0, run.completed.stderr
@@ -189,6 +202,76 @@ def test_fake_success_proves_v2_argv_tty_attachment_and_result_order(tmp_path: P
     invocation = "\n".join(run.event_lines())
     for forbidden in ("--print", "--prompt", "--add-dir", "--continue", "--conversation"):
         assert forbidden not in invocation
+
+
+def test_five_workspace_lanes_analyze_concurrently_with_serialized_clipboard(tmp_path: Path):
+    home = tmp_path / "home"
+    home.mkdir()
+    barrier = tmp_path / "barrier"
+    clipboard_log = tmp_path / "clipboard-global.log"
+    processes: list[tuple[subprocess.Popen[str], Path, Path]] = []
+    for lane in range(1, 6):
+        video = tmp_path / f"fixture-{lane}.mp4"
+        video.write_bytes(f"opaque transport fixture {lane}".encode())
+        request = tmp_path / f"request-{lane}.txt"
+        request.write_text(DEFAULT_REQUEST, encoding="utf-8")
+        output = tmp_path / f"result-{lane}.json"
+        events = tmp_path / f"events-{lane}.log"
+        env = os.environ.copy()
+        env.update({
+            "HOME": str(home),
+            "FAKE_AGY_SCENARIO": "concurrency-barrier",
+            "FAKE_CLIPBOARD_SCENARIO": "success",
+            "FAKE_CLIPBOARD_GLOBAL_LOG": str(clipboard_log),
+            "FAKE_AGY_CONCURRENCY_BARRIER": str(barrier),
+            "FAKE_AGY_CONCURRENCY_COUNT": "5",
+            "FAKE_AGY_EVENT_LOG": str(events),
+            "FAKE_AGY_PROMPT_LOG": str(tmp_path / f"prompts-{lane}.jsonl"),
+            "FAKE_AGY_SYMLINK_TARGET": str(tmp_path / f"symlink-{lane}.json"),
+        })
+        process = subprocess.Popen(
+            fake_command(video, request, output, lane=lane),
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            env=env,
+        )
+        processes.append((process, output, events))
+
+    completed: list[tuple[int, str, str, Path, Path]] = []
+    try:
+        for process, output, events in processes:
+            stdout, stderr = process.communicate(timeout=15)
+            completed.append((process.returncode, stdout, stderr, output, events))
+    finally:
+        for process, _, _ in processes:
+            if process.poll() is None:
+                process.terminate()
+                process.wait(timeout=5)
+
+    assert len(list(barrier.glob("*.ready"))) == 5
+    for returncode, _stdout, stderr, output, events in completed:
+        assert returncode == 0, stderr
+        assert output.is_file()
+        lines = events.read_text(encoding="utf-8").splitlines()
+        assert lines.index("CLIPBOARD_RESTORE") < lines.index("PROMPT")
+    active_clipboard_pid: str | None = None
+    clipboard_transactions = 0
+    for line in clipboard_log.read_text(encoding="utf-8").splitlines():
+        pid, action = line.split()
+        if action == "CLIPBOARD_STAGE":
+            assert active_clipboard_pid is None
+            active_clipboard_pid = pid
+            clipboard_transactions += 1
+        elif action == "CLIPBOARD_RESTORE":
+            assert active_clipboard_pid == pid
+            active_clipboard_pid = None
+    assert active_clipboard_pid is None
+    assert clipboard_transactions == 5
+    cache = home / "Library" / "Caches" / "agy-video-reader"
+    assert (cache / "workspace").is_dir()
+    for lane in range(2, 6):
+        assert (cache / f"workspace-{lane}").is_dir()
 
 
 def test_test_only_posix_ci_wrapper_runs_deterministic_profile(tmp_path: Path):

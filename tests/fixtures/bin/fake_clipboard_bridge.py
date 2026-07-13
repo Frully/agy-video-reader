@@ -13,6 +13,9 @@ def event(name: str) -> None:
     if path := os.environ.get("FAKE_AGY_EVENT_LOG"):
         with open(path, "a", encoding="utf-8") as stream:
             stream.write(name + "\n")
+    if path := os.environ.get("FAKE_CLIPBOARD_GLOBAL_LOG"):
+        with open(path, "a", encoding="utf-8") as stream:
+            stream.write(f"{os.getppid()} {name}\n")
 
 
 def option(name: str) -> str:

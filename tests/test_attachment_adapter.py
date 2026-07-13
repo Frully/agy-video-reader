@@ -256,7 +256,8 @@ def test_runner_checks_platform_adapter_before_reading_inputs(
     controller = runner.VideoRunner(args)
     controller.cache_root = tmp_path / "must-not-create-cache"
     controller.workspace = controller.cache_root / "workspace"
-    controller.lock = runner.Lock(controller.cache_root / "clipboard.lock")
+    controller.workspace_lock = runner.Lock(controller.cache_root / "locks" / "workspace.lock")
+    controller.clipboard_lock = runner.Lock(controller.cache_root / "clipboard.lock")
     controller.attachment_adapter = runner.create_attachment_adapter(platform_name="unknown")
 
     with pytest.raises(runner.RunnerError) as caught:
@@ -286,7 +287,8 @@ def test_windows_runner_gate_precedes_inputs_agy_and_cache(
     controller.platform_name = "win32"
     controller.cache_root = tmp_path / "must-not-create-cache"
     controller.workspace = controller.cache_root / "workspace"
-    controller.lock = runner.Lock(controller.cache_root / "clipboard.lock")
+    controller.workspace_lock = runner.Lock(controller.cache_root / "locks" / "workspace.lock")
+    controller.clipboard_lock = runner.Lock(controller.cache_root / "clipboard.lock")
     controller.attachment_adapter = runner.create_attachment_adapter(platform_name="win32")
 
     with pytest.raises(runner.RunnerError) as caught:

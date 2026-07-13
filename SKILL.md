@@ -44,8 +44,8 @@ scripts/prepare_agy_video.py /absolute/path/to/video.mp4 \
 Parse the mode-`0600` `manifest.json`. Trust no path supplied by the model or user request; use only canonical part paths emitted by this preparer. Never improvise ffmpeg commands or pass hidden executable overrides during normal use. The preparer must leave the source unchanged and choose exactly one policy:
 
 - pass through an original file at or below 50 MiB;
-- create one H.264/AAC MP4 full-duration proxy targeting 47 MiB when its calculated video bitrate meets the resolution-based quality floor; or
-- create at most 24 H.264/AAC MP4 parts targeting 47 MiB, with 2 seconds of overlap, when one proxy would cross the quality floor.
+- create one H.264/AAC MP4 full-duration proxy targeting 47 MiB when its calculated video bitrate meets the balanced quality floor; or
+- cap larger sources at 854×480 and create the fewest H.264/AAC MP4 parts targeting 47 MiB at 550 kbps (350 kbps for output at or below 640×360), with 2 seconds of overlap, when one proxy would cross the quality floor.
 
 For oversized input, require `ffmpeg` and `ffprobe`. Stop on any preparation error. Do not extract frames or audio, build a contact sheet, run OCR, transcribe separately, semantically inspect media with another tool, silently drop duration, or switch models or video-understanding skills. Read [references/media-preparation-contract.md](references/media-preparation-contract.md) for the complete preparation and cleanup contract.
 
@@ -62,18 +62,22 @@ Resolve this skill directory and run:
 ```bash
 scripts/run_antigravity_video.py /absolute/path/from/manifest.mp4 \
   --request-file /private/temp/request.txt \
-  --output /private/output/result.json
+  --output /private/output/result.json \
+  --lane 1
 ```
 
 Use `--timeout-seconds N` only to change the model-generation deadline; the default is 300 seconds. Use `--keep-sanitized-log` only when needed. Never pass hidden executable overrides during normal use.
 
-Run parts sequentially and publish each result to a separate private path. For a single original or compressed proxy, preserve the user's request unchanged. For segmented media, add only trusted part context to each private request file: part index/count, original time interval, overlap, and the instruction to report timestamps relative to that attachment. Never include source paths or the manifest. After every successful controller run, require its trusted `source.filename`, `source.size_bytes`, and `source.sha256` to match that manifest part before continuing. Stop on the first mismatch or non-zero exit; do not retry or create a partial briefing from earlier parts.
+For one original or compressed proxy, use lane 1 and preserve the user's request unchanged. For segmented media, run up to five controller processes concurrently, using effective concurrency `min(5, part_count)`. Assign every active process a unique stable `--lane` from 1 through 5 and do not reuse a lane until its process has exited and completed cleanup. Publish every result to a separate private path.
+
+For segmented media, add only trusted part context to each private request file: part index/count, original time interval, overlap, and the instruction to report timestamps relative to that attachment. Never include source paths or the manifest. After every successful controller run, require its trusted `source.filename`, `source.size_bytes`, and `source.sha256` to match that manifest part. On the first mismatch or non-zero exit, interrupt the other active controllers, wait for their cleanup, and start no pending parts. Do not retry or create a partial briefing from successful parts.
 
 Do not invoke `agy` separately, approve setup/auth prompts, resume a conversation, construct a textual media reference, or reproduce the PTY/clipboard workflow. The controller must:
 
 - run exact `agy 1.1.1` with `Gemini 3.5 Flash (High)`, `--mode accept-edits`, and `--sandbox`;
-- launch in a freshly reset, empty dedicated workspace containing no video, clipboard backup, request file, scripts, or prior artifacts;
+- launch in the freshly reset, empty dedicated workspace for its stable lane, containing no video, clipboard backup, request file, scripts, or prior artifacts;
 - use the selected attachment adapter only; the current macOS adapter transports one externally staged video file URL through the clipboard and restores it immediately after authoritative `video/*` confirmation;
+- hold a per-lane workspace lock for the complete run, but hold the one global clipboard lock only from staging through authoritative attachment confirmation and restoration, so model generation can overlap safely across lanes;
 - permit only the workspace-local `result.json` in the fixed prompt, stop on tool approvals, and reject every other workspace artifact;
 - ignore model text in the TUI and read no result from the clipboard;
 - validate `result.json`, inject trusted backend/source fields, and atomically publish it to `--output`;

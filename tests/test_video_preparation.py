@@ -58,6 +58,21 @@ def test_plan_uses_one_proxy_when_full_duration_bitrate_is_usable(preparer):
     assert plan.parts[0].video_bitrate_kbps >= plan.video_bitrate_floor_kbps
 
 
+def test_balanced_profile_caps_large_video_at_480p(preparer):
+    assert preparer.output_dimensions(1920, 1080) == (854, 480)
+    assert preparer.quality_floor_kbps(1920, 1080) == 550
+    assert preparer.output_dimensions(640, 360) == (640, 360)
+    assert preparer.quality_floor_kbps(640, 360) == 350
+
+
+def test_balanced_profile_uses_four_parts_for_38_minute_video(preparer):
+    probe = preparer.MediaProbe(38 * 60 + 28, 1280, 720, "h264", 1, 0)
+    plan = preparer.build_plan(235_400_000, probe)
+    assert plan.mode == "segmented_proxy"
+    assert plan.video_bitrate_floor_kbps == 550
+    assert len(plan.parts) == 4
+
+
 def test_plan_segments_long_video_with_overlap_and_complete_coverage(preparer):
     probe = preparer.MediaProbe(3600.0, 1920, 1080, "h264", 1, 0)
     plan = preparer.build_plan(600 * 1024 * 1024, probe)
@@ -98,12 +113,18 @@ def test_representative_transcode_is_private_complete_and_below_limit(preparer, 
         target_part_bytes=target,
     )
     assert manifest["preparation"]["mode"] == "compressed_proxy"
+    assert manifest["preparation"]["profile"] == "balanced-480p"
+    assert manifest["preparation"]["max_output_width"] == 854
+    assert manifest["preparation"]["max_output_height"] == 480
+    assert manifest["preparation"]["max_output_fps"] == 30
     assert manifest["preparation"]["complete_duration_preserved"] is True
     assert len(manifest["parts"]) == 1
     proxy = Path(manifest["parts"][0]["path"])
     assert 0 < proxy.stat().st_size <= limit
     assert proxy.stat().st_mode & 0o777 == 0o600
     assert manifest["parts"][0]["end_seconds"] == pytest.approx(10.0)
+    assert manifest["parts"][0]["width"] <= preparer.MAX_OUTPUT_WIDTH
+    assert manifest["parts"][0]["height"] <= preparer.MAX_OUTPUT_HEIGHT
     assert manifest["quality_warnings"]
 
 

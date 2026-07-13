@@ -24,12 +24,18 @@ from pathlib import Path
 from typing import Any, NoReturn
 
 
-PREPARER_VERSION = "1.0.0"
+PREPARER_VERSION = "1.1.0"
 SUPPORTED_EXTENSIONS = {".mp4", ".mov", ".webm", ".avi"}
 ATTACHMENT_LIMIT_BYTES = 50 * 1024 * 1024
 TARGET_PART_BYTES = 47 * 1024 * 1024
 MUX_SAFETY_FACTOR = 0.96
 AUDIO_BITRATE_KBPS = 96
+MAX_OUTPUT_WIDTH = 854
+MAX_OUTPUT_HEIGHT = 480
+SMALL_OUTPUT_MAX_WIDTH = 640
+SMALL_OUTPUT_MAX_HEIGHT = 360
+SMALL_VIDEO_BITRATE_KBPS = 350
+BALANCED_VIDEO_BITRATE_KBPS = 550
 SEGMENT_OVERLAP_SECONDS = 2.0
 MAX_SEGMENTS = 24
 MANIFEST_FILENAME = "manifest.json"
@@ -179,20 +185,18 @@ def probe_media(path: Path, ffprobe: Path) -> MediaProbe:
 
 
 def output_dimensions(width: int, height: int) -> tuple[int, int]:
-    ratio = min(1.0, 1280 / width, 720 / height)
-    output_width = max(2, int(width * ratio) // 2 * 2)
-    output_height = max(2, int(height * ratio) // 2 * 2)
+    ratio = min(1.0, MAX_OUTPUT_WIDTH / width, MAX_OUTPUT_HEIGHT / height)
+    output_width = max(2, round(width * ratio / 2) * 2)
+    output_height = max(2, round(height * ratio / 2) * 2)
     return output_width, output_height
 
 
 def quality_floor_kbps(width: int, height: int) -> int:
     output_width, output_height = output_dimensions(width, height)
     pixels = output_width * output_height
-    if pixels <= 640 * 360:
-        return 350
-    if pixels <= 854 * 480:
-        return 550
-    return 1000
+    if pixels <= SMALL_OUTPUT_MAX_WIDTH * SMALL_OUTPUT_MAX_HEIGHT:
+        return SMALL_VIDEO_BITRATE_KBPS
+    return BALANCED_VIDEO_BITRATE_KBPS
 
 
 def available_video_bitrate_kbps(
@@ -254,15 +258,15 @@ def build_plan(
 def ensure_private_empty_directory(value: str | os.PathLike[str]) -> Path:
     path = Path(value).expanduser().resolve(strict=False)
     if sys.platform == "darwin":
-        workspace = (Path.home() / "Library" / "Caches" / "agy-video-reader" / "workspace").resolve(strict=False)
+        cache_root = (Path.home() / "Library" / "Caches" / "agy-video-reader").resolve(strict=False)
         try:
-            path.relative_to(workspace)
+            path.relative_to(cache_root)
         except ValueError:
             pass
         else:
             fail(
                 "OUTPUT_DIRECTORY_INVALID",
-                "Prepared media cannot be stored inside the Antigravity workspace.",
+                "Prepared media cannot be stored inside the Antigravity runtime cache.",
                 "Choose a private temporary directory outside the Antigravity cache workspace.",
             )
     if path.exists() or path.is_symlink():
@@ -299,7 +303,10 @@ def ffmpeg_base_command(
     video_bitrate_kbps: int,
     passlog: Path,
 ) -> list[str]:
-    scale_filter = "scale=w='min(1280,iw)':h='min(720,ih)':force_original_aspect_ratio=decrease:force_divisible_by=2"
+    scale_filter = (
+        f"scale=w='min({MAX_OUTPUT_WIDTH},iw)':h='min({MAX_OUTPUT_HEIGHT},ih)':"
+        "force_original_aspect_ratio=decrease:force_divisible_by=2"
+    )
     return [
         str(ffmpeg), "-nostdin", "-hide_banner", "-loglevel", "error", "-y", "-i", str(source),
         "-ss", f"{plan.start_seconds:.3f}", "-t", f"{plan.duration_seconds:.3f}",
@@ -483,7 +490,7 @@ def prepare_video(
             })
         assert_source_unchanged(source, source_info, source_hash)
         warnings = [
-            "Analysis uses a transcoded H.264/AAC proxy; fine visual detail, small text, HDR, and fast motion may be degraded.",
+            "Analysis uses a balanced H.264/AAC proxy capped at 854x480 and 30 fps; fine visual detail, small text, HDR, and fast motion may be degraded.",
         ]
         if probe.audio_stream_count > 1:
             warnings.append("Only the first audio stream is retained in the analysis proxy.")
@@ -497,11 +504,15 @@ def prepare_video(
             "source": source_meta,
             "preparation": {
                 "mode": plan.mode,
+                "profile": "balanced-480p",
                 "attachment_limit_bytes": attachment_limit_bytes,
                 "target_part_bytes": target_part_bytes,
                 "complete_duration_preserved": True,
                 "transcoded": True,
                 "segmented": plan.mode == "segmented_proxy",
+                "max_output_width": MAX_OUTPUT_WIDTH,
+                "max_output_height": MAX_OUTPUT_HEIGHT,
+                "max_output_fps": 30,
                 "video_bitrate_floor_kbps": plan.video_bitrate_floor_kbps,
                 "audio_bitrate_kbps": plan.audio_bitrate_kbps,
                 "segment_overlap_seconds": SEGMENT_OVERLAP_SECONDS if plan.mode == "segmented_proxy" else 0.0,

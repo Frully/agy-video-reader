@@ -11,7 +11,8 @@ evidence source.
   stays below the hard limit.
 - Resolve `ffmpeg` and `ffprobe` from the host only for oversized input.
 - Use H.264 through `libx264`, AAC at 96 kbps when audio exists, `yuv420p`, a
-  maximum 1280×720 frame, and a maximum 30 fps.
+  maximum 854×480 frame, and a maximum 30 fps. This is the fixed balanced
+  profile for general video understanding.
 - Use two-pass video encoding and verify every generated file with ffprobe.
 - Keep only the first audio stream. Do not retain soft subtitle streams. Record
   both losses as manifest warnings when applicable.
@@ -26,18 +27,18 @@ For a source at or below 50 MiB, emit `mode: original` and reference the source
 without copying or requiring ffmpeg.
 
 For oversized input, probe duration and dimensions, cap the planned output at
-720p, and calculate the full-duration video bitrate after reserving 96 kbps for
-audio and 4 percent for muxing variance. Compare it with the resolution-based
-floor:
+480p without upscaling, and calculate the full-duration video bitrate after
+reserving 96 kbps for audio and 4 percent for muxing variance. Compare it with
+the balanced resolution-based floor:
 
 - up to 640×360: 350 kbps;
-- up to 854×480: 550 kbps;
-- larger output up to 1280×720: 1000 kbps.
+- larger output up to 854×480: 550 kbps.
 
 If the full-duration bitrate meets the floor, emit one
-`mode: compressed_proxy` file. Otherwise emit `mode: segmented_proxy` parts at
-the floor bitrate. Use 2 seconds of overlap and preserve complete source-time
-coverage. Stop before encoding if more than 24 parts would be required.
+`mode: compressed_proxy` file. Otherwise choose the fewest
+`mode: segmented_proxy` parts that keep every part at the floor bitrate. Use 2
+seconds of overlap and preserve complete source-time coverage. Stop before
+encoding if more than 24 parts would be required.
 
 These floors are transport heuristics, not quality guarantees. They cannot
 detect small text, screen recordings, HDR, rapid motion, or other content whose
@@ -71,4 +72,6 @@ upload attempt. On any other failure, remove generated proxies and stop.
 The caller must delete the entire preparation directory in a `finally` path.
 Never modify or delete the original. For segmented analysis, disclose the exact
 part count and obtain confirmation before the first upload because every part
-creates a separate Antigravity run and may consume credits.
+creates a separate Antigravity run and may consume credits. Run at most five
+parts concurrently, assign each active controller a distinct stable lane, and
+start no pending parts after the first failure.

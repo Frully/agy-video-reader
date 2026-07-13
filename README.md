@@ -1,6 +1,6 @@
 # Agy Video Reader
 
-`agy-video-reader` 是一个供 Codex 使用的视频理解 Skill。它把本地视频安全地附加到 Google Antigravity CLI（`agy`），让 Codex 可以根据画面和声音完成总结、时间线整理、内容问答和重点提取。
+`agy-video-reader` 是一个通用的视频理解 Agent Skill，可供任何能够发现 `SKILL.md`、执行本地脚本并管理临时文件的 Agent 宿主使用。它把本地视频安全地附加到 Google Antigravity CLI（`agy`），让宿主 Agent 可以根据画面和声音完成总结、时间线整理、内容问答和重点提取。
 
 它主要解决两个问题：
 
@@ -34,14 +34,16 @@
   ├─ ≤ 50 MiB：直接上传原视频
   └─ > 50 MiB：本地预处理
        ├─ 单个完整压缩副本能够保持最低分析码率：上传 1 个副本
-       └─ 否则：生成带 2 秒重叠的多个压缩分段，逐段上传
+       └─ 否则：按均衡画质生成尽可能少、带 2 秒重叠的压缩分段
                          ↓
               Google Antigravity 分析
                          ↓
               校验、校准时间戳并合并结果
 ```
 
-每个上传文件的硬限制是 50 MiB。生成文件以 47 MiB 为目标，为封装波动预留空间。分段最多 24 个；如果需要更多分段，Skill 会停止而不是牺牲到无法接受的分析码率。
+每个上传文件的硬限制是 50 MiB。生成文件以 47 MiB 为目标，为封装波动预留空间。预处理默认采用最大 854×480、最高 30 fps、H.264 550 kbps 和 AAC 96 kbps 的均衡档；输出不超过 640×360 时使用 H.264 350 kbps，并且不会放大低分辨率源视频。Skill 会选择满足该档位的最少分段数，最多 24 个。
+
+分段分析最多使用 5 路并发，实际并发数为分段数和 5 的较小值。每一路使用独立、固定的 Antigravity 工作区；只有 macOS 剪贴板附件传输的短暂阶段保持全局串行，附件确认和剪贴板恢复后，各路模型分析会并行继续。
 
 ## 依赖
 
@@ -50,7 +52,7 @@
 | 依赖 | 要求 | 用途 |
 | --- | --- | --- |
 | macOS | 当前正式支持的平台 | 使用经过验证的 macOS 文件附件和剪贴板流程 |
-| Codex | 支持本地 Skills | 识别并执行 `agy-video-reader` |
+| Agent 宿主 | 能够加载 `SKILL.md`、执行本地命令并读写私有临时文件 | 识别 Skill 并编排准备、上传、校验和结果合并流程 |
 | Python | 3.10 或更高版本 | 运行预处理器、控制器和校验逻辑 |
 | Antigravity CLI | **必须为 `agy 1.1.1`** | 实际的视频与音频理解后端 |
 | Google/Antigravity 账号 | 已登录并可使用目标模型 | 运行 Antigravity 分析 |
@@ -96,15 +98,22 @@ agy --version
 
 ### 2. 完成首次信任和登录
 
-`agy` 的项目授权与当前工作目录有关。本 Skill 始终使用一个固定工作目录；请在第一次分析前手动完成一次信任和登录：
+`agy` 的项目授权与当前工作目录有关。本 Skill 使用 5 个固定的并发工作区。请在第一次并发分析前依次进入这些目录，手动完成一次信任和登录；每次 `agy` 正常进入后退出，再继续下一个目录：
 
 ```bash
-mkdir -p "$HOME/Library/Caches/agy-video-reader/workspace"
-cd "$HOME/Library/Caches/agy-video-reader/workspace"
-agy
+for lane in 1 2 3 4 5; do
+  if [ "$lane" = 1 ]; then
+    workspace="$HOME/Library/Caches/agy-video-reader/workspace"
+  else
+    workspace="$HOME/Library/Caches/agy-video-reader/workspace-$lane"
+  fi
+  mkdir -p "$workspace"
+  echo "初始化并发工作区：$workspace"
+  (cd "$workspace" && agy)
+done
 ```
 
-在 TUI 中信任这个目录、完成 Google 登录，确认可以正常进入后退出。不要改成每次随机使用 `/tmp` 目录，否则 `agy` 可能反复要求项目授权。
+在 TUI 中信任每个目录、完成 Google 登录，确认可以正常进入后退出。不要改成每次随机使用 `/tmp` 目录，否则 `agy` 可能反复要求项目授权。如果通常只分析少量分段，也可以先初始化实际会使用的 lane，后续缺少的 lane 会明确返回设置提示。
 
 可以再运行一次预检：
 
@@ -144,31 +153,38 @@ ffmpeg -hide_banner -encoders | grep -E 'libx264|aac'
 
 ## 安装 Skill
 
-克隆到 Codex 的 Skills 目录：
+将仓库克隆到所用 Agent 宿主的 Skills 搜索目录。不同宿主的全局目录和项目级目录可能不同，请以对应宿主的文档或配置为准：
 
 ```bash
-mkdir -p "$HOME/.codex/skills"
+export AGENT_SKILLS_DIR="/absolute/path/to/your-agent/skills"
+mkdir -p "$AGENT_SKILLS_DIR"
 git clone https://github.com/Frully/agy-video-reader.git \
-  "$HOME/.codex/skills/agy-video-reader"
+  "$AGENT_SKILLS_DIR/agy-video-reader"
 ```
 
 如果已经安装，可以更新：
 
 ```bash
-git -C "$HOME/.codex/skills/agy-video-reader" pull --ff-only
+git -C "$AGENT_SKILLS_DIR/agy-video-reader" pull --ff-only
 ```
 
-然后重新打开 Codex，或新建一个任务，使 Skill 列表重新加载。Skill 名称必须保持为 `agy-video-reader`。
+安装后的目录根部必须直接包含 `SKILL.md`，目录名和 Skill 名称应保持为 `agy-video-reader`。安装完成后，按宿主的方式重新加载 Skills、重启客户端或新建任务。
 
 ## 使用方法
 
-在 Codex 中提供一个本地视频的绝对路径，并明确调用 `$agy-video-reader`：
+在 Agent 对话中提供一个本地视频的绝对路径，并指定使用 `agy-video-reader`：
+
+```text
+使用 agy-video-reader 总结 /Users/me/Videos/demo.mp4，按时间线列出关键内容。
+```
+
+如果宿主支持 `$skill-name` 形式的显式调用，也可以写成：
 
 ```text
 使用 $agy-video-reader 总结 /Users/me/Videos/demo.mp4，按时间线列出关键内容。
 ```
 
-也可以提出具体问题：
+也可以直接提出具体问题：
 
 ```text
 使用 $agy-video-reader 阅读 /Users/me/Videos/meeting.mov。
@@ -185,20 +201,21 @@ Skill 会自动：
 2. 决定上传原视频、一个完整压缩副本，还是多个压缩分段；
 3. 在上传前说明哪些文件会离开本机，以及可能产生的历史记录和额度消耗；
 4. 多分段时告知确切数量，并在首次上传前等待确认；
-5. 逐个运行 Antigravity、校验结果、调整分段时间戳并去除重叠内容；
+5. 使用最多 5 个隔离 lane 并发运行 Antigravity，校验结果、调整分段时间戳并去除重叠内容；
 6. 清理临时副本和结果，保留原视频不变。
 
-通常不应手工调用 `scripts/run_antigravity_video.py`。`SKILL.md` 包含完整的安全顺序、校验要求和清理约束，让 Codex 负责整个流程。
+通常不应手工调用 `scripts/run_antigravity_video.py`。`SKILL.md` 包含完整的安全顺序、校验要求和清理约束，应让宿主 Agent 负责整个流程。
 
 ## 大文件与分析质量
 
 超过 50 MiB 时，预处理器会生成 H.264/AAC MP4：
 
-- 最大分辨率为 1280×720；
+- 最大分辨率为 854×480，低分辨率源视频不会被放大；
 - 最大帧率为 30 fps；
 - 音频使用 AAC 96 kbps；
+- 480p 均衡档的视频码率下限为 550 kbps，360p 及以下为 350 kbps；
 - 优先保留完整时长；
-- 单文件码率过低时改为带 2 秒重叠的分段；
+- 单文件码率过低时，按均衡码率生成满足质量下限的最少分段；
 - 原文件始终留在本地且保持不变。
 
 这种策略适合一般实拍、访谈、课程和演示视频，但不能保证无损。小字号文字、屏幕录制、快速运动、HDR、噪声较大的音频或非常细微的画面变化可能受到压缩影响。Skill 会把预处理产生的质量警告展示给用户，不会把压缩结果描述为无损分析。
@@ -220,10 +237,13 @@ macOS 的系统剪贴板是全局资源。控制器会备份、使用并立即�
 
 ### 每次都要求授权或信任项目
 
-不要把 `agy` 的工作目录切换到随机临时目录。按“完成首次信任和登录”一节，在下面这个固定目录手动完成一次设置：
+不要把 `agy` 的工作目录切换到随机临时目录。按“完成首次信任和登录”一节，为实际使用的固定并发 lane 手动完成一次设置：
 
 ```text
 ~/Library/Caches/agy-video-reader/workspace
+~/Library/Caches/agy-video-reader/workspace-2
+...
+~/Library/Caches/agy-video-reader/workspace-5
 ```
 
 ### 提示 `AGY_VERSION_UNSUPPORTED`

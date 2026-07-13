@@ -95,6 +95,13 @@ def handle_prompt(scenario: str, prompt_count: int) -> bool:
     if scenario == "generation-timeout":
         time.sleep(3600)
         return True
+    if scenario == "concurrency-barrier":
+        barrier = Path(os.environ["FAKE_AGY_CONCURRENCY_BARRIER"])
+        expected = int(os.environ.get("FAKE_AGY_CONCURRENCY_COUNT", "2"))
+        barrier.mkdir(mode=0o700, parents=True, exist_ok=True)
+        (barrier / f"{os.getpid()}.ready").write_text(str(Path.cwd()), encoding="utf-8")
+        while len(list(barrier.glob("*.ready"))) < expected:
+            time.sleep(0.02)
     if scenario == "missing-output":
         emit(f"{EDITOR_READY}\r\n")
         event("EDITOR_READY")
