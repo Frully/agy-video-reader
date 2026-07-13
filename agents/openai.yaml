@@ -1,0 +1,4 @@
+interface:
+  display_name: "Agy Video Reader"
+  short_description: "Read local videos, including oversized files"
+  default_prompt: "Use $agy-video-reader to prepare and analyze the local video at /absolute/path/to/video.mp4 for my current request, returning only validated video-grounded results."

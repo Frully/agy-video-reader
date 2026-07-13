@@ -1,0 +1,50 @@
+{
+  "schema_version": "1.0",
+  "fixtures": [
+    {
+      "id": "A",
+      "filename": "47f1a8d6-cf0b-4e32-a12d-6d5799d67101.mp4",
+      "sha256": "7f7f33d8d189492ae38ed910526c50beb624dcb67e7e4624b7e5fbc55b6594da",
+      "visual_track": "V1",
+      "audio_track": "A1",
+      "visual_sequence": ["Q7", "B2", "X9", "D4"],
+      "audio_sequence": ["cobalt", "willow", "ember", "forty two"],
+      "intervals": [
+        {"start_seconds": 0.0, "end_seconds": 2.5},
+        {"start_seconds": 2.5, "end_seconds": 5.0},
+        {"start_seconds": 5.0, "end_seconds": 7.5},
+        {"start_seconds": 7.5, "end_seconds": 10.0}
+      ]
+    },
+    {
+      "id": "B",
+      "filename": "8b6c1f27-7334-4990-a2af-e58b1a90ee02.mp4",
+      "sha256": "12675c793efbb5a3a6208ba6ca289ae9e4448d72aad899cad23fa505f1813fb9",
+      "visual_track": "V1",
+      "audio_track": "A2",
+      "visual_sequence": ["Q7", "B2", "X9", "D4"],
+      "audio_sequence": ["maple", "ninety", "silver", "thirteen"],
+      "intervals": [
+        {"start_seconds": 0.0, "end_seconds": 2.5},
+        {"start_seconds": 2.5, "end_seconds": 5.0},
+        {"start_seconds": 5.0, "end_seconds": 7.5},
+        {"start_seconds": 7.5, "end_seconds": 10.0}
+      ]
+    },
+    {
+      "id": "C",
+      "filename": "d3019a5e-b8bc-4e55-9b1f-20c6ea383e03.mp4",
+      "sha256": "94fa6f31f035af99bb092f06a38e9fa2ee878d1fda7680649b7b228addbabc2b",
+      "visual_track": "V2",
+      "audio_track": "A1",
+      "visual_sequence": ["K6", "R1", "A8", "M3"],
+      "audio_sequence": ["cobalt", "willow", "ember", "forty two"],
+      "intervals": [
+        {"start_seconds": 0.0, "end_seconds": 2.5},
+        {"start_seconds": 2.5, "end_seconds": 5.0},
+        {"start_seconds": 5.0, "end_seconds": 7.5},
+        {"start_seconds": 7.5, "end_seconds": 10.0}
+      ]
+    }
+  ]
+}
