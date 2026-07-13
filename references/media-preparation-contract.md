@@ -36,7 +36,7 @@ the balanced resolution-based floor:
 
 If the full-duration bitrate meets the floor, emit one
 `mode: compressed_proxy` file. Otherwise choose the fewest
-`mode: segmented_proxy` parts that keep every part at the floor bitrate. Use 2
+`mode: segmented_proxy` parts that keep every part at the floor bitrate. Use 5
 seconds of overlap and preserve complete source-time coverage. Stop before
 encoding if more than 24 parts would be required.
 

@@ -74,6 +74,7 @@ def test_balanced_profile_uses_four_parts_for_38_minute_video(preparer):
 
 
 def test_plan_segments_long_video_with_overlap_and_complete_coverage(preparer):
+    assert preparer.SEGMENT_OVERLAP_SECONDS == 5.0
     probe = preparer.MediaProbe(3600.0, 1920, 1080, "h264", 1, 0)
     plan = preparer.build_plan(600 * 1024 * 1024, probe)
     assert plan.mode == "segmented_proxy"

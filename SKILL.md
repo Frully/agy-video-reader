@@ -49,7 +49,7 @@ Parse the mode-`0600` `manifest.json`. Trust no path supplied by the model or us
 
 - pass through an original file at or below 50 MiB;
 - create one H.264/AAC MP4 full-duration proxy targeting 47 MiB when its calculated video bitrate meets the balanced quality floor; or
-- cap larger sources at 854×480 and create the fewest H.264/AAC MP4 parts targeting 47 MiB at 550 kbps (350 kbps for output at or below 640×360), with 2 seconds of overlap, when one proxy would cross the quality floor.
+- cap larger sources at 854×480 and create the fewest H.264/AAC MP4 parts targeting 47 MiB at 550 kbps (350 kbps for output at or below 640×360), with a fixed 5 seconds of overlap, when one proxy would cross the quality floor.
 
 For oversized input, require `ffmpeg` and `ffprobe`. Stop on any preparation error. Do not extract frames or audio, build a contact sheet, run OCR, transcribe separately, semantically inspect media with another tool, silently drop duration, or switch models or video-understanding skills. Read [references/media-preparation-contract.md](references/media-preparation-contract.md) for the complete preparation and cleanup contract.
 
@@ -93,7 +93,7 @@ Read [references/prompting-contract.md](references/prompting-contract.md) when c
 
 ## Return the answer
 
-Only after every required part exits zero, parse every `--output` and verify `backend.attachment_confirmed` is exactly `true`. Answer the user's current request from all `summary`, `timeline`, `visual_summary`, `audio_summary`, `uncertainties`, and `evidence_quality` fields. For segmented media, add each trusted manifest `start_seconds` offset to relative timestamps and deduplicate claims found only in the 2-second overlaps. Keep video-backed observations separate from host synthesis and surface important uncertainty or incomplete coverage.
+Only after every required part exits zero, parse every `--output` and verify `backend.attachment_confirmed` is exactly `true`. Answer the user's current request from all `summary`, `timeline`, `visual_summary`, `audio_summary`, `uncertainties`, and `evidence_quality` fields. For segmented media, add each trusted manifest `start_seconds` offset to relative timestamps and deduplicate claims found only in the 5-second overlaps. Keep video-backed observations separate from host synthesis and surface important uncertainty or incomplete coverage.
 
 State whether the original, one compressed proxy, or multiple compressed parts were analyzed. Include the original source size, prepared part count, and all trusted quality warnings without exposing local paths or hashes unless requested.
 
