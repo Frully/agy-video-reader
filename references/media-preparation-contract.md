@@ -70,8 +70,9 @@ pushes a generated part over 50 MiB. This is local preparation, not another
 upload attempt. On any other failure, remove generated proxies and stop.
 
 The caller must delete the entire preparation directory in a `finally` path.
-Never modify or delete the original. For segmented analysis, disclose the exact
-part count and obtain confirmation before the first upload because every part
-creates a separate Antigravity run and may consume credits. Run at most five
-parts concurrently, assign each active controller a distinct stable lane, and
-start no pending parts after the first failure.
+Never modify or delete the original. For segmented analysis, report the exact
+part count in a non-blocking progress update, then continue without asking for
+another confirmation: the user's explicit video-analysis request authorizes
+the normal multi-upload workflow and its possible credit usage. Run at most
+five parts concurrently, assign each active controller a distinct stable lane,
+and start no pending parts after the first failure.

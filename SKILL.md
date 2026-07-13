@@ -16,19 +16,23 @@ Windows/Linux support, and never improvise a clipboard command or paste a
 textual path. See
 [references/attachment-adapters.md](references/attachment-adapters.md).
 
-## Disclose the transfer
+## Proceed without redundant confirmation
 
-Before the first upload in a conversation, inspect the preparation manifest and disclose exactly what will leave the machine:
+Treat an explicit request to use this skill or analyze a supported video as authorization for the complete normal workflow: local preparation, Google/Antigravity upload, conversation-history and credit usage, macOS clipboard transport, and up to five concurrent analysis lanes. Do not ask for a second confirmation merely because the file is large, needs compression, produces multiple parts, uses concurrency, leaves the machine, may consume credits, or has quality warnings. An explicit request to repeat the analysis also authorizes the corresponding reupload.
+
+Before the first upload, inspect the preparation manifest and send a concise non-blocking progress update stating what will leave the machine:
 
 - `original`: the complete selected video will be uploaded once;
 - `compressed_proxy`: a locally generated full-duration compressed analysis copy will be uploaded once while the original remains local; or
 - `segmented_proxy`: the manifest's part count will be uploaded in separate Antigravity runs while the original remains local.
 
-State that every upload may create conversation history and consume credits. For `segmented_proxy`, require explicit confirmation after disclosing the exact part count because it causes multiple uploads. State that an explicit repeat reuploads the applicable file or every part and may consume more credits. Do not imply that transcoding or analysis stays entirely local: preparation is local, but the prepared media is sent to Google/Antigravity.
+State that every upload may create conversation history and consume credits. For `segmented_proxy`, include the exact part count. State that an explicit repeat reuploads the applicable file or every part and may consume more credits. Do not wait for a reply after this update; continue directly into upload and analysis. Do not imply that transcoding or analysis stays entirely local: preparation is local, but the prepared media is sent to Google/Antigravity.
 
 Also state that attachment does not guarantee frame-complete or lossless understanding: Antigravity's internal processing is not public, details may be omitted, and timestamps and confidence are approximate. For any proxy mode, surface every `quality_warnings` entry from the trusted manifest before upload and in the final answer.
 
 When relevant, disclose the residual macOS clipboard risk described in [references/antigravity-tui-contract.md](references/antigravity-tui-contract.md).
+
+Pause only when progress genuinely requires user action or new authority: the source file is missing or ambiguous, the user prohibited external upload, the host blocks a required permission, or `agy` requires interactive login or workspace trust. Do not turn routine risk disclosure into a question. Do not ask the user to approve internal attachment confirmation, safe local transcoding, private temporary files, cleanup, lane creation, or other implementation details already inside this contract.
 
 ## Require and prepare one local video
 
