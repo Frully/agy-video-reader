@@ -1,7 +1,7 @@
 # Oversized media preparation contract
 
-Use this contract only to make one supported local video attachable to the fixed
-`agy 1.1.1` profile. ffmpeg is a byte-transport preprocessor, never a semantic
+Use this contract only to make one supported local video attachable to the
+current `agy` runtime profile. ffmpeg is a byte-transport preprocessor, never a semantic
 evidence source.
 
 ## Fixed limits and tools

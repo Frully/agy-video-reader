@@ -15,7 +15,7 @@ SCHEMA_PATH = PACKAGE / "references" / "output-schema.json"
 
 EXPECTED_BACKEND = {
     "provider": "antigravity-cli",
-    "cli_version": "1.1.1",
+    "cli_version": "1.1.2",
     "model": "Gemini 3.5 Flash (High)",
     "attachment_confirmed": True,
     "attachment_mime": "video/mp4",
@@ -113,6 +113,18 @@ def test_schema_document_is_valid_json_and_declares_closed_top_level_contract():
 def test_valid_final_payload_is_returned_in_schema_shape(runner):
     result = runner.validate_output_payload(final_payload())
     assert result == final_payload()
+
+
+def test_backend_accepts_other_semantic_cli_versions(runner):
+    payload = final_payload()
+    payload["backend"]["cli_version"] = "9.9.9"
+    assert runner.validate_output_payload(payload)["backend"]["cli_version"] == "9.9.9"
+
+
+def test_backend_accepts_unknown_cli_version(runner):
+    payload = final_payload()
+    payload["backend"]["cli_version"] = "unknown"
+    assert runner.validate_output_payload(payload)["backend"]["cli_version"] == "unknown"
 
 
 def test_evidence_quality_is_canonicalized_before_closed_enum_validation(runner):

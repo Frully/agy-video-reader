@@ -183,6 +183,7 @@ def test_fake_success_proves_v2_argv_tty_attachment_and_result_order(tmp_path: P
     assert run.completed.returncode == 0, run.completed.stderr
     result = json.loads(run.output.read_text(encoding="utf-8"))
     assert result["backend"]["attachment_confirmed"] is True
+    assert result["backend"]["cli_version"] == "1.1.2"
     assert run.event_lines() == [
         "VERSION",
         "MODELS",
@@ -337,7 +338,6 @@ def test_tool_approval_is_rejected_without_approval_or_output(tmp_path: Path):
         ("setup-required", "AGY_SETUP_REQUIRED"),
         ("media-rejected", "MEDIA_REJECTED"),
         ("multiple-attachments", "ATTACHMENT_FAILED"),
-        ("wrong-version", "AGY_VERSION_UNSUPPORTED"),
         ("model-unavailable", "AGY_MODEL_UNAVAILABLE"),
     ],
 )
@@ -347,6 +347,20 @@ def test_control_plane_failures_are_rejected_without_output(
     run = run_fake(tmp_path, scenario=scenario)
     assert run.completed.returncode != 0 and not run.output.exists()
     assert error_from(run)["code"] == code
+
+
+def test_newer_semantic_cli_version_is_accepted_and_reported(tmp_path: Path):
+    run = run_fake(tmp_path, scenario="newer-version")
+    assert run.completed.returncode == 0, run.completed.stderr
+    result = json.loads(run.output.read_text(encoding="utf-8"))
+    assert result["backend"]["cli_version"] == "9.9.9"
+
+
+def test_unparseable_cli_version_is_accepted_as_unknown(tmp_path: Path):
+    run = run_fake(tmp_path, scenario="malformed-version")
+    assert run.completed.returncode == 0, run.completed.stderr
+    result = json.loads(run.output.read_text(encoding="utf-8"))
+    assert result["backend"]["cli_version"] == "unknown"
 
 
 def test_clipboard_race_retains_only_recovery_backup(tmp_path: Path):

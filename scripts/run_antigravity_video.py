@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Attach one local video to agy 1.1.1 and return validated JSON.
+"""Attach one local video to agy and return validated JSON.
 
 Only Antigravity interprets media content. This controller validates transport,
 drives the interactive TUI through a PTY, and validates a result file written in
@@ -51,10 +51,10 @@ from attachment_adapter import (  # noqa: E402
 )
 
 
-RUNNER_VERSION = "2.3.0"
-SKILL_VERSION = "2.5.0"
-SUPPORTED_AGY_VERSION = "1.1.1"
+RUNNER_VERSION = "2.4.0"
+SKILL_VERSION = "2.6.0"
 FIXED_MODEL = "Gemini 3.5 Flash (High)"
+CLI_VERSION_PATTERN = r"\d+\.\d+\.\d+(?:[-+][0-9A-Za-z][0-9A-Za-z.-]*)?"
 SUPPORTED_EXTENSIONS = {".mp4", ".mov", ".webm", ".avi"}
 MAX_VIDEO_BYTES = 50 * 1024 * 1024
 DEFAULT_GENERATION_TIMEOUT = 300
@@ -74,7 +74,7 @@ STABLE_ERROR_CODES = {
     "REQUEST_INVALID", "VIDEO_NOT_FOUND", "VIDEO_NOT_REGULAR_FILE", "VIDEO_EMPTY", "VIDEO_FORMAT_UNSUPPORTED",
     "VIDEO_TOO_LARGE",
     "ATTACHMENT_ADAPTER_UNAVAILABLE",
-    "AGY_NOT_FOUND", "AGY_VERSION_UNSUPPORTED", "AGY_SETUP_REQUIRED", "AGY_AUTH_REQUIRED",
+    "AGY_NOT_FOUND", "AGY_SETUP_REQUIRED", "AGY_AUTH_REQUIRED",
     "AGY_MODEL_UNAVAILABLE", "AGY_START_FAILED", "AGY_READY_TIMEOUT", "ATTACHMENT_FAILED",
     "MEDIA_REJECTED", "AGY_TOOL_REQUESTED", "AGY_GENERATION_TIMEOUT", "OUTPUT_FILE_MISSING",
     "OUTPUT_JSON_INVALID", "OUTPUT_PATH_INVALID", "CLIPBOARD_BACKUP_FAILED", "CLIPBOARD_CHANGED_EXTERNALLY",
@@ -172,8 +172,8 @@ def validate_video_path(value: str | os.PathLike[str]) -> Path:
         fail(
             "VIDEO_TOO_LARGE",
             (
-                f"The selected attachment candidate is {info.st_size} bytes, exceeding agy {SUPPORTED_AGY_VERSION}'s "
-                f"{MAX_VIDEO_BYTES}-byte (50 MiB) attachment limit."
+                f"The selected attachment candidate is {info.st_size} bytes, exceeding the configured "
+                f"{MAX_VIDEO_BYTES}-byte (50 MiB) agy attachment limit."
             ),
             TUIState.PRECHECK,
             next_step=(
@@ -183,12 +183,20 @@ def validate_video_path(value: str | os.PathLike[str]) -> Path:
     return path
 
 
-def parse_cli_version(text: str) -> str:
-    match = re.search(r"(?<!\d)(\d+\.\d+\.\d+)(?!\d)", text)
-    if not match:
-        fail("AGY_VERSION_UNSUPPORTED", "Could not parse the Antigravity CLI version.", TUIState.PRECHECK,
-             next_step=f"Install agy {SUPPORTED_AGY_VERSION} and complete its setup manually.")
-    return match.group(1)
+def parse_cli_version(text: str) -> str | None:
+    match = re.search(rf"(?<![0-9A-Za-z])({CLI_VERSION_PATTERN})(?![0-9A-Za-z.-])", text)
+    return match.group(1) if match else None
+
+
+def detect_cli_version(path: Path) -> str:
+    """Return diagnostic version metadata without making it a compatibility gate."""
+    try:
+        completed = subprocess.run(
+            [str(path), "--version"], capture_output=True, text=True, timeout=10, check=False
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return "unknown"
+    return parse_cli_version(completed.stdout + completed.stderr) or "unknown"
 
 
 def model_is_available(text: str) -> bool:
@@ -272,11 +280,13 @@ def validate_output_payload(
         if not isinstance(backend, dict) or set(backend) != backend_keys:
             raise ValueError("backend schema mismatch")
         allowed_mimes = {"video/mp4", "video/quicktime", "video/webm", "video/x-msvideo", "video/avi", "video/msvideo"}
-        if backend != {
-            "provider": "antigravity-cli", "cli_version": SUPPORTED_AGY_VERSION,
-            "model": FIXED_MODEL, "attachment_confirmed": True,
-            "attachment_mime": backend.get("attachment_mime"),
-        } or backend["attachment_mime"] not in allowed_mimes:
+        if (backend.get("provider") != "antigravity-cli"
+                or not isinstance(backend.get("cli_version"), str)
+                or (backend["cli_version"] != "unknown"
+                    and re.fullmatch(CLI_VERSION_PATTERN, backend["cli_version"]) is None)
+                or backend.get("model") != FIXED_MODEL
+                or backend.get("attachment_confirmed") is not True
+                or backend.get("attachment_mime") not in allowed_mimes):
             raise ValueError("untrusted or invalid backend")
 
         source = value["source"]
@@ -574,7 +584,7 @@ def _current_editor_ready(text: str) -> bool:
     lines = [line for line in text.splitlines() if line.strip()]
     if not lines:
         return False
-    # The 1.1.1 accept-edits editor can be followed by a separator and footer,
+    # The observed accept-edits editor can be followed by a separator and footer,
     # so it is not necessarily the final non-empty terminal row.
     return any(ACCEPT_EDITS_EDITOR_PROMPT_PATTERN.fullmatch(line) for line in lines[-3:])
 
@@ -737,19 +747,15 @@ def _resolve_agy(override: str | None) -> Path:
     candidate = override or shutil.which("agy")
     if not candidate:
         fail("AGY_NOT_FOUND", "Antigravity CLI (agy) was not found on PATH.", TUIState.PRECHECK,
-             next_step=f"Install agy {SUPPORTED_AGY_VERSION}, sign in manually, and retry.")
+             next_step="Install agy, sign in manually, and retry.")
     path = Path(candidate).expanduser().resolve()
     if not path.is_file() or not os.access(path, os.X_OK):
         fail("AGY_NOT_FOUND", "The configured agy executable is not executable.", TUIState.PRECHECK)
     return path
 
 
-def _preflight_agy(path: Path) -> None:
-    version_result = _run_checked([str(path), "--version"], "AGY_VERSION_UNSUPPORTED", TUIState.PRECHECK)
-    version = parse_cli_version(version_result.stdout + version_result.stderr)
-    if version != SUPPORTED_AGY_VERSION:
-        fail("AGY_VERSION_UNSUPPORTED", f"agy {version} is not validated; v2 requires exactly {SUPPORTED_AGY_VERSION}.",
-             TUIState.PRECHECK, next_step=f"Use agy {SUPPORTED_AGY_VERSION}; later versions require new transcript and authenticated compatibility tests.")
+def _preflight_agy(path: Path) -> str:
+    version = detect_cli_version(path)
     try:
         models = subprocess.run([str(path), "models"], capture_output=True, text=True, timeout=30, check=False)
     except (OSError, subprocess.TimeoutExpired) as exc:
@@ -761,6 +767,7 @@ def _preflight_agy(path: Path) -> None:
     if models.returncode != 0 or not model_is_available(models.stdout):
         fail("AGY_MODEL_UNAVAILABLE", f"The fixed model {FIXED_MODEL} is unavailable for this account.", TUIState.PRECHECK,
              next_step="Use an Antigravity account with access to the fixed v2 model; no fallback model is allowed.")
+    return version
 
 
 def _analysis_prompt(analysis_request: str) -> str:
@@ -906,6 +913,7 @@ class VideoRunner:
         self.video_uploaded = False
         self.attachment_mime: str | None = None
         self.source_meta: dict[str, Any] | None = None
+        self.agy_version: str | None = None
         self.interrupted = False
         self.events: list[dict[str, Any]] = []
         self.started = time.monotonic()
@@ -1162,7 +1170,7 @@ class VideoRunner:
             fail("OUTPUT_PATH_INVALID", "--output cannot point inside the runner's runtime cache.",
                  TUIState.PRECHECK, next_step="Choose an output path outside the Antigravity cache workspace.")
         agy = _resolve_agy(self.args.agy_executable)
-        _preflight_agy(agy)
+        self.agy_version = _preflight_agy(agy)
         self.check_interrupted()
         self.cache_root.mkdir(mode=0o700, parents=True, exist_ok=True)
         os.chmod(self.cache_root, 0o700)
@@ -1223,7 +1231,7 @@ class VideoRunner:
         self.clipboard_lock.release()
         self.check_interrupted()
         expected_backend = {
-            "provider": "antigravity-cli", "cli_version": SUPPORTED_AGY_VERSION, "model": FIXED_MODEL,
+            "provider": "antigravity-cli", "cli_version": self.agy_version, "model": FIXED_MODEL,
             "attachment_confirmed": True, "attachment_mime": mime,
         }
 
@@ -1317,7 +1325,7 @@ class VideoRunner:
         payload = {
             "runner_version": RUNNER_VERSION, "skill_version": SKILL_VERSION,
             "concurrency_lane": self.lane,
-            "agy_version": SUPPORTED_AGY_VERSION, "model": FIXED_MODEL,
+            "agy_version": self.agy_version, "model": FIXED_MODEL,
             "source": self.source_meta,
             "states": self.events, "video_uploaded": self.video_uploaded,
             "attachment_confirmed": self.video_uploaded, "attachment_mime": self.attachment_mime,

@@ -125,7 +125,7 @@ collect all of the following on the target operating system:
   a plain-text path;
 - a real attachment run in which `agy` confirms exactly one clipboard-sourced
   `video/*` item;
-- an authenticated real-video result using the fixed CLI version and model;
+- an authenticated real-video result recording the actual CLI version and fixed model;
 - clipboard restoration checks before and after attachment, including an
   external-change race and interrupted cleanup;
 - environment-specific coverage (Windows desktop; Linux X11 and Wayland

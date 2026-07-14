@@ -43,16 +43,11 @@ def authenticated_prerequisites() -> tuple[bool, str]:
     if not agy:
         return False, "agy is not installed"
     try:
-        version = subprocess.run(
-            [agy, "--version"], capture_output=True, text=True, timeout=10, check=True
-        )
         models = subprocess.run(
             [agy, "models"], capture_output=True, text=True, timeout=20, check=True
         )
     except (OSError, subprocess.SubprocessError) as exc:
         return False, f"agy authentication/preflight is unavailable: {exc}"
-    if "1.1.1" not in version.stdout + version.stderr:
-        return False, "agy 1.1.1 is required"
     if MODEL not in models.stdout + models.stderr:
         return False, f"{MODEL} is unavailable or authentication is incomplete"
     if not GROUND_TRUTH.is_file() or not VIDEOS.is_dir():

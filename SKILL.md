@@ -78,7 +78,7 @@ For segmented media, add only trusted part context to each private request file:
 
 Do not invoke `agy` separately, approve setup/auth prompts, resume a conversation, construct a textual media reference, or reproduce the PTY/clipboard workflow. The controller must:
 
-- run exact `agy 1.1.1` with `Gemini 3.5 Flash (High)`, `--mode accept-edits`, and `--sandbox`;
+- run the installed `agy` with `Gemini 3.5 Flash (High)`, `--mode accept-edits`, and `--sandbox`; record the reported CLI version only as diagnostic metadata and never use it as a compatibility gate;
 - launch in the freshly reset, empty dedicated workspace for its stable lane, containing no video, clipboard backup, request file, scripts, or prior artifacts;
 - use the selected attachment adapter only; the current macOS adapter transports one externally staged video file URL through the clipboard and restores it immediately after authoritative `video/*` confirmation;
 - hold a per-lane workspace lock for the complete run, but hold the one global clipboard lock only from staging through authoritative attachment confirmation and restoration, so model generation can overlap safely across lanes;

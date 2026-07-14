@@ -13,7 +13,7 @@ from pathlib import Path
 
 
 MODEL = "Gemini 3.5 Flash (High)"
-VERSION = "1.1.1"
+VERSION = "1.1.2"
 INTERACTIVE_ARGV = ["--model", MODEL, "--sandbox", "--mode", "accept-edits"]
 EDITOR_READY = "> Accept-edits mode: file edits auto-approved (shift+tab to cycle)"
 
@@ -205,7 +205,10 @@ def main() -> int:
     scenario = os.environ.get("FAKE_AGY_SCENARIO", "success")
     if args == ["--version"]:
         event("VERSION")
-        emit(f"agy {'9.9.9' if scenario == 'wrong-version' else VERSION}\n")
+        if scenario == "malformed-version":
+            emit("agy development build\n")
+        else:
+            emit(f"agy {'9.9.9' if scenario == 'newer-version' else VERSION}\n")
         return 0
     if args == ["models"]:
         event("MODELS")

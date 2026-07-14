@@ -34,7 +34,15 @@
           "const": "antigravity-cli"
         },
         "cli_version": {
-          "const": "1.1.1"
+          "oneOf": [
+            {
+              "const": "unknown"
+            },
+            {
+              "type": "string",
+              "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+(?:[-+][0-9A-Za-z][0-9A-Za-z.-]*)?$"
+            }
+          ]
         },
         "model": {
           "const": "Gemini 3.5 Flash (High)"

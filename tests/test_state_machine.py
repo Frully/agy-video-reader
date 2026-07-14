@@ -214,7 +214,7 @@ def test_pty_process_provides_a_controlling_terminal(runner, tmp_path):
         assert controller.stop()
 
 
-def test_fake_agy_exposes_exact_preflight_profile():
+def test_fake_agy_exposes_capability_preflight_profile():
     version = subprocess.run(
         [sys.executable, str(FAKE_AGY), "--version"],
         check=True,
@@ -227,12 +227,12 @@ def test_fake_agy_exposes_exact_preflight_profile():
         capture_output=True,
         text=True,
     )
-    assert version.stdout.strip() == "agy 1.1.1"
+    assert version.stdout.strip() == "agy 1.1.2"
     assert "Gemini 3.5 Flash (High)" in models.stdout
 
 
 def test_fake_agy_scenario_switches_are_deterministic(monkeypatch):
-    monkeypatch.setenv("FAKE_AGY_SCENARIO", "wrong-version")
+    monkeypatch.setenv("FAKE_AGY_SCENARIO", "newer-version")
     completed = subprocess.run(
         [sys.executable, str(FAKE_AGY), "--version"],
         check=True,

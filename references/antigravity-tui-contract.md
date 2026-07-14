@@ -3,10 +3,12 @@
 Official references: [CLI prompting and media attachment](https://antigravity.google/docs/cli-prompting)
 and [CLI overview](https://antigravity.google/docs/cli-overview).
 
-## Fixed profile
+## Runtime capability profile
 
-Support only macOS, `agy 1.1.1`, and `Gemini 3.5 Flash (High)`. Start a fresh
-PTY process with this exact argv array:
+Support only macOS and `Gemini 3.5 Flash (High)`. Do not maintain an `agy`
+version allowlist, denylist, or minimum: version output is best-effort diagnostic
+metadata and never a compatibility gate. Start a fresh PTY process with this
+exact argv array:
 
 ```text
 [agy_path, "--model", "Gemini 3.5 Flash (High)", "--sandbox", "--mode", "accept-edits"]
@@ -99,9 +101,9 @@ bounded and sanitized. Redact credentials, account data, URLs, conversation
 IDs, absolute paths, clipboard data, and all video-derived/model text from
 retained logs.
 
-Recognize these control events for the exact 1.1.1 accept-edits profile:
+Recognize these control events for the observed accept-edits runtime profile:
 
-`agy 1.1.1` exposes no tool-free execution flag. In `accept-edits`, file edits
+The current `agy` interface exposes no tool-free execution flag. In `accept-edits`, file edits
 can complete without an approval screen. The controller therefore bounds
 writable effects with the empty dedicated workspace, rejects every final
 artifact except `result.json`, and stops on any interactive tool approval. The
@@ -110,7 +112,7 @@ prove the absence of an invisible read-only tool call inside the CLI.
 
 | Event | Required behavior |
 | --- | --- |
-| `READY` | Match the recorded accept-edits editor line before touching the clipboard. The footer is fixture evidence but is not mandatory because 1.1.1 may redraw or omit it. |
+| `READY` | Match the recorded accept-edits editor line before touching the clipboard. The footer is fixture evidence but is not mandatory because the CLI may redraw or omit it. |
 | `AUTH_REQUIRED` | Stop on interactive login, authorization URL/code, or browser sign-in. |
 | `SETUP_REQUIRED` | Stop on onboarding or workspace-trust UI; never approve it. |
 | `ATTACHMENT_CONFIRMED` | Require count `1`, clipboard source, `media attached`, and `video/*`. |
@@ -160,7 +162,7 @@ Remove the external video snapshot and all non-recovery temporary data. Preserve
 only a clipboard backup that is still needed for deliberate recovery.
 
 Never retry an upload, attachment, timeout, media rejection, tool/file-policy
-violation, auth/setup requirement, unavailable model, or unsupported version.
+violation, auth/setup requirement, unavailable model, or behavioral compatibility failure.
 Allow at most the formatting-only overwrite described in
 `prompting-contract.md`; it stays in the same session and uses the same attached
 video and `result.json` path.
@@ -177,6 +179,7 @@ and atomic. A five-lane integration fixture must prove that all model-generation
 phases can overlap while every clipboard stage/restore transaction remains
 strictly serialized.
 
-Any CLI version, model, mode, footer, tool trajectory, or attachment wording
-change requires new deterministic fixtures and an authenticated controlled-video
-test before support is declared.
+A version-number change alone does not block execution. Any observed model,
+mode, footer, tool trajectory, attachment wording, or result-contract change
+that breaks capability detection requires updated deterministic fixtures and an
+authenticated controlled-video test before the detector is relaxed.

@@ -29,11 +29,11 @@
 
 - macOS；
 - Python 3.10 或更高版本；
-- Google Antigravity CLI `agy 1.1.1`，且账号可正常使用；
+- Google Antigravity CLI `agy`，且账号可正常使用；
 - Xcode Command Line Tools 提供的 `swiftc`；
 - 视频超过 50 MiB 时，需要带 `libx264` 和 AAC 编码器的 `ffmpeg`、`ffprobe`。
 
-`agy` 的登录和工作区信任是交互式操作，AI 可以准备环境并打开流程，但可能仍需要用户亲自确认。当前 Skill 只验证了 `agy 1.1.1`；版本不匹配时会停止，而不会冒险绕过兼容性检查。
+`agy` 的登录和工作区信任是交互式操作，AI 可以准备环境并打开流程，但可能仍需要用户亲自确认。Skill 不维护版本白名单：版本号只记录为诊断信息，兼容性由实际模型、启动状态、附件确认和结果契约在运行时判断。
 
 ## 使用
 
